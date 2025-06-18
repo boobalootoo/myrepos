@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My GitHub Repos</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 text-gray-800">
+  <div class="max-w-6xl mx-auto p-4">
+    <h1 class="text-3xl font-bold mb-4 text-center">My GitHub Repositories</h1>
+    <div id="repoList" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  </div>
+
+  <script>
+    const username = "boobalootoo"; // change to your GitHub username
+
+    async function fetchRepos() {
+      const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100`);
+      const repos = await res.json();
+
+      // Sort by last updated
+      repos.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+
+      const repoList = document.getElementById('repoList');
+      repoList.innerHTML = '';
+
+      repos.forEach(repo => {
+        const card = document.createElement('div');
+        card.className = "bg-white p-4 rounded shadow hover:shadow-md transition";
+
+        card.innerHTML = `
+          <h2 class="text-xl font-semibold mb-1">
+            <a href="${repo.html_url}" target="_blank" class="text-blue-600 hover:underline">${repo.name}</a>
+          </h2>
+          <p class="text-sm mb-2 text-gray-700">${repo.description || 'No description'}</p>
+          <div class="text-xs text-gray-500">
+            🌟 ${repo.stargazers_count} &nbsp;
+            🛠 ${repo.language || 'Unknown'} &nbsp;
+            ⏱ ${new Date(repo.updated_at).toLocaleDateString()}
+          </div>
+        `;
+        repoList.appendChild(card);
+      });
+    }
+
+    fetchRepos();
+  </script>
+</body>
+</html>
