@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My GitHub Repos</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    .draggable {
+      position: fixed;
+      top: 100px;
+      left: 100px;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      width: 80vw;
+      height: 80vh;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden; /* Ensure content within the draggable window is clipped */
+    }
+    .draggable-header {
+      background: #eee;
+      padding: 0.5rem;
+      cursor: grab; /* Changed to grab to indicate draggable */
+      font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top-left-radius: 6px; /* Apply rounded corners to header */
+      border-top-right-radius: 6px;
+    }
+    .draggable iframe {
+      flex: 1;
+      border: none;
+      width: 100%; /* Ensure iframe fills the width */
+      height: 100%; /* Ensure iframe fills the height */
+    }
+    /* Custom alert message style */
+    .custom-alert {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #4CAF50; /* Green background */
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      z-index: 10000; /* Above other elements */
+      opacity: 0;
+      transition: opacity 0.5s ease-in-out;
+      pointer-events: none; /* Allows clicks to pass through */
+    }
+    .custom-alert.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+  <div class="max-w-6xl mx-auto p-4">
+    <h1 class="text-3xl font-bold mb-6 text-center">My GitHub Repositories</h1>
+    <div id="repoList" class="space-y-4"></div>
+  </div>
+
+  <!-- File popup -->
+  <div id="popup" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50">
+    <div class="bg-white max-w-2xl w-full rounded-lg shadow-lg overflow-hidden">
+      <div class="flex justify-between items-center px-4 py-2 bg-gray-200 rounded-t-lg">
+        <h2 class="font-bold text-lg" id="popupFilename"></h2>
+        <button onclick="closePopup()" class="text-red-600 text-xl font-bold rounded-full w-8 h-8 flex items-center justify-center hover:bg-gray-300 transition-colors">&times;</button>
+      </div>
+      <pre class="p-4 overflow-auto text-sm max-h-96" id="popupContent"></pre>
+      <div class="p-2 border-t bg-gray-100 flex justify-end rounded-b-lg">
+        <button onclick="copyPopup()" class="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700 transition-colors">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Draggable index.html preview - Hidden by default and no longer used for direct preview -->
+  <div id="draggableWindow" class="draggable hidden">
+    <div class="draggable-header" id="dragHeader">
+      <span id="draggableTitle">index.html preview</span>
+      <button onclick="closeDraggable()" class="text-red-600 text-xl font-bold rounded-full w-6 h-6 flex items-center justify-center hover:bg-gray-300 transition-colors">&times;</button>
+    </div>
+    <iframe id="draggableFrame"></iframe>
+  </div>
+
+  <!-- Custom Alert Message -->
+  <div id="customAlert" class="custom-alert"></div>
+
+  <script>
+    const username = "boobalootoo"; // change to your GitHub username
+    const categoryEmojis = {
+      GALLERY: "🖼️",
+      WORKSHOP: "🛠️",
+      BACKBURNER: "⏳",
+      SHELVED: "📦",
+      GRAVEYARD: "⚰️",
+      OTHER: "❓"
+    };
+
+    /**
+     * Shows a custom alert message at the top of the screen.
+     * @param {string} message The message to display.
+     */
+    function showCustomAlert(message) {
+      const alertDiv = document.getElementById('customAlert');
+      alertDiv.textContent = message;
+      alertDiv.classList.add('show');
+
+      // Hide the alert after 2 seconds
+      setTimeout(() => {
+        alertDiv.classList.remove('show');
+      }, 2000);
+    }
+
+    /**
+     * Fetches GitHub repositories for the specified username and displays them categorized.
+     */
+    async function fetchRepos() {
+      try {
+        const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100`);
+        if (!res.ok) {
+          throw new Error(`GitHub API error: ${res.statusText}`);
+        }
+        const repos = await res.json();
+
+        const categories = {
+          GALLERY: [],
+          WORKSHOP: [],
+          BACKBURNER: [],
+          SHELVED: [],
+          GRAVEYARD: [], // This will now include 'DEAD' descriptions
+          OTHER: []
+        };
+
+        repos.forEach(repo => {
+          let raw = repo.description || '';
+          let category = 'OTHER';
+          let cleanDesc = raw.trim();
+
+          // Check for "DEAD" description first for GRAVEYARD category
+          if (raw.toLowerCase().includes('dead')) {
+            category = 'GRAVEYARD';
+            cleanDesc = raw.replace(/dead[\s:-]*/i, '').trim(); // Remove "DEAD" from description
+          } else {
+            // Otherwise, use regex for other categories
+            const match = raw.match(/^([A-Z]+)[\s:-]+(.*)/i);
+            if (match) {
+                const matchedCategory = match[1].toUpperCase();
+                // Ensure the matched category is one of our predefined ones
+                if (categories.hasOwnProperty(matchedCategory)) {
+                    category = matchedCategory;
+                    cleanDesc = match[2].trim();
+                }
+            }
+          }
+
+          // Enrich repo object with category and clean description
+          const enrichedRepo = { ...repo, category, cleanDesc };
+
+          categories[category].push(enrichedRepo);
+        });
+
+        const repoList = document.getElementById('repoList');
+        repoList.innerHTML = ''; // Clear previous content
+
+        // Define the specific order for categories
+        const sortedCategoryNames = ['GALLERY', 'WORKSHOP', 'BACKBURNER', 'SHELVED', 'GRAVEYARD', 'OTHER'];
+
+
+        for (const cat of sortedCategoryNames) {
+          const reposInCategory = categories[cat];
+          if (reposInCategory.length === 0) continue;
+
+          const isCollapsed = localStorage.getItem(`collapsed-${cat}`) === "true";
+
+          const section = document.createElement('section');
+          section.classList.add("mb-4", "rounded-lg", "overflow-hidden"); // Add rounded corners to sections
+
+          section.innerHTML = `
+            <div class="cursor-pointer bg-gray-200 p-3 rounded-t-lg font-bold text-lg flex justify-between items-center hover:bg-gray-300 transition-colors" onclick="toggleCategory('${cat}')">
+              <span>${categoryEmojis[cat] || ''} ${cat} (${reposInCategory.length})</span>
+              <span id="toggle-${cat}" class="text-xl">${isCollapsed ? '+' : '-'}</span>
+            </div>
+            <div class="space-y-3 p-3 bg-white ${isCollapsed ? 'hidden' : ''}" id="group-${cat}"></div>
+          `;
+
+          repoList.appendChild(section);
+          const group = section.querySelector(`#group-${cat}`);
+
+          // Sort repositories alphabetically by name
+          reposInCategory.sort((a, b) => a.name.localeCompare(b.name));
+
+          for (const repo of reposInCategory) {
+            const container = document.createElement('div');
+            container.className = "bg-white rounded-lg shadow-sm p-4 border border-gray-200"; // Added border and more subtle shadow
+
+            container.innerHTML = `
+              <h3 class="text-xl font-semibold mb-2 flex flex-col sm:flex-row sm:justify-between sm:items-center">
+                <div class="mb-2 sm:mb-0">
+                  <a href="${repo.html_url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">
+                    ${repo.name}
+                  </a>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button class="text-sm bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600 transition-colors shadow-sm" onclick="openPreview('${repo.name}')">Open index.html</button>
+                  <button class="text-sm bg-gray-600 text-white px-3 py-1 rounded-md hover:bg-gray-700 transition-colors shadow-sm" onclick="toggleFiles('${repo.name}', this)">Show Files</button>
+                </div>
+              </h3>
+              <p class="text-sm text-gray-700 mb-3">${repo.cleanDesc || 'No description'}</p>
+              <div class="text-xs text-gray-500 flex flex-wrap gap-x-4">
+                <span>🌟 ${repo.stargazers_count}</span>
+                <span>🛠 ${repo.language || 'Unknown'}</span>
+                <span>⏱ ${new Date(repo.updated_at).toLocaleDateString()}</span>
+              </div>
+              <ul id="files-${repo.name}" class="ml-4 mt-3 space-y-1 hidden border-t border-gray-200 pt-3"></ul>
+            `;
+            group.appendChild(container);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching repositories:", error);
+        showCustomAlert("Failed to load repositories. Please check your username or network.");
+      }
+    }
+
+    /**
+     * Toggles the visibility of the file list for a given repository.
+     * @param {string} repo The name of the repository.
+     * @param {HTMLElement} button The button element that triggered the toggle.
+     */
+    function toggleFiles(repo, button) {
+      const fileList = document.getElementById(`files-${repo}`);
+      const isVisible = !fileList.classList.contains("hidden");
+
+      if (isVisible) {
+        fileList.classList.add("hidden");
+        button.textContent = "Show Files";
+      } else {
+        // Fetch files only if not already loaded
+        if (fileList.childNodes.length === 0) {
+          fetch(`https://api.github.com/repos/${username}/${repo}/contents`)
+            .then(res => {
+              if (!res.ok) {
+                throw new Error(`GitHub API error: ${res.statusText}`);
+              }
+              return res.json();
+            })
+            .then(files => {
+              if (files.length === 0) {
+                fileList.innerHTML = '<li class="text-gray-500">No files found.</li>';
+              } else {
+                files.forEach(file => {
+                  const li = document.createElement("li");
+                  li.className = "text-sm text-blue-700 hover:underline cursor-pointer";
+                  li.textContent = file.name;
+                  li.onclick = () => showFile(repo, file.path, file.name);
+                  fileList.appendChild(li);
+                });
+              }
+            })
+            .catch(error => {
+              console.error("Error fetching files:", error);
+              fileList.innerHTML = `<li class="text-red-500">Error loading files: ${error.message}.</li>`;
+            });
+        }
+        fileList.classList.remove("hidden");
+        button.textContent = "Hide Files";
+      }
+    }
+
+    /**
+     * Shows the content of a specific file in a popup.
+     * @param {string} repo The name of the repository.
+     * @param {string} path The path to the file.
+     * @param {string} name The name of the file to display in the popup header.
+     */
+    function showFile(repo, path, name) {
+      fetch(`https://api.github.com/repos/${username}/${repo}/contents/${path}`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`GitHub API error: ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          // GitHub API returns content Base64 encoded
+          const content = atob(data.content.replace(/\n/g, ''));
+          document.getElementById('popupFilename').textContent = name;
+          document.getElementById('popupContent').textContent = content;
+          document.getElementById('popup').classList.remove("hidden");
+          document.getElementById('popup').classList.add("flex");
+        })
+        .catch(error => {
+          console.error("Error fetching file content:", error);
+          showCustomAlert(`Failed to load file: ${error.message}`);
+        });
+    }
+
+    /**
+     * Closes the file content popup.
+     */
+    function closePopup() {
+      document.getElementById('popup').classList.add("hidden");
+      document.getElementById('popup').classList.remove("flex");
+    }
+
+    /**
+     * Copies the content of the popup to the clipboard.
+     */
+    function copyPopup() {
+      const content = document.getElementById('popupContent').textContent;
+      navigator.clipboard.writeText(content)
+        .then(() => {
+          showCustomAlert("Copied to clipboard!");
+        })
+        .catch(err => {
+          console.error('Failed to copy text: ', err);
+          showCustomAlert("Failed to copy!");
+        });
+    }
+
+    /**
+     * Opens the index.html of a repository in a new browser tab.
+     * This avoids CORS issues that can occur with iframes for GitHub Pages.
+     * @param {string} repo The name of the repository.
+     */
+    function openPreview(repo) {
+      const url = `https://${username}.github.io/${repo}/`;
+      window.open(url, '_blank', 'noopener,noreferrer');
+      showCustomAlert("Opened preview in a new tab.");
+      // The draggable window and iframe logic is no longer used for direct preview
+      // but kept in HTML as a placeholder if future use cases emerge.
+      closeDraggable(); // Ensure the (unused) draggable window is hidden.
+    }
+
+    /**
+     * Closes the draggable preview window (now primarily a placeholder).
+     */
+    function closeDraggable() {
+      const draggableWindow = document.getElementById('draggableWindow');
+      if (draggableWindow) {
+        draggableWindow.classList.add("hidden");
+        draggableWindow.style.display = 'none'; // Ensure it's hidden
+        const draggableFrame = document.getElementById('draggableFrame');
+        if (draggableFrame) {
+            draggableFrame.src = ""; // Clear iframe content
+        }
+      }
+    }
+
+    // Drag logic for the draggable window (kept for completeness, though less relevant now)
+    let isDragging = false;
+    let offset = [0, 0];
+    const header = document.getElementById('dragHeader');
+    const windowEl = document.getElementById('draggableWindow');
+
+    // Mousedown event to start dragging
+    header.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      header.style.cursor = 'grabbing'; // Change cursor to grabbing
+      offset = [
+        windowEl.offsetLeft - e.clientX,
+        windowEl.offsetTop - e.clientY
+      ];
+      // Prevent text selection during drag
+      e.preventDefault();
+    });
+
+    // Mouseup event to stop dragging
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+      header.style.cursor = 'grab'; // Reset cursor
+    });
+
+    // Mousemove event to update position while dragging
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        const newLeft = e.clientX + offset[0];
+        const newTop = e.clientY + offset[1];
+
+        // Basic boundary checks to keep window within viewport
+        const maxX = window.innerWidth - windowEl.offsetWidth;
+        const maxY = window.innerHeight - windowEl.offsetHeight;
+
+        windowEl.style.left = Math.max(0, Math.min(newLeft, maxX)) + 'px';
+        windowEl.style.top = Math.max(0, Math.min(newTop, maxY)) + 'px';
+      }
+    });
+
+    /**
+     * Toggles the visibility of a category section and saves its state to local storage.
+     * @param {string} cat The category name.
+     */
+    function toggleCategory(cat) {
+      const group = document.getElementById(`group-${cat}`);
+      const toggle = document.getElementById(`toggle-${cat}`);
+      const isHidden = group.classList.toggle("hidden");
+      toggle.textContent = isHidden ? "+" : "-";
+      localStorage.setItem(`collapsed-${cat}`, isHidden);
+    }
+
+    // Initial fetch of repositories when the page loads
+    fetchRepos();
+
+    // Ensure the draggable window is hidden on page load after DOM content is loaded
+    document.addEventListener('DOMContentLoaded', () => {
+        const draggableWindow = document.getElementById('draggableWindow');
+        if (draggableWindow) {
+            draggableWindow.classList.add('hidden');
+            draggableWindow.style.display = 'none';
+        }
+    });
+  </script>
+</body>
+</html>
