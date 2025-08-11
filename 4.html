@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>My GitHub Repos</title>
+    <!-- Using Tailwind CSS for a modern, responsive design -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom alert message style */
+        .custom-alert {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #4CAF50; /* Green background */
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            pointer-events: none;
+        }
+        .custom-alert.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <div class="max-w-6xl mx-auto p-4">
+        <h1 class="text-3xl font-bold mb-6 text-center">My GitHub Repositories</h1>
+
+        <!-- User Input Form -->
+        <form id="userForm" class="mb-8 flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+            <input type="text" id="usernameInput" placeholder="Enter GitHub Username" value="boobalootoo"
+                   class="w-full sm:w-auto flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+            <button type="submit"
+                    class="w-full sm:w-auto bg-blue-600 text-white font-semibold px-6 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors">
+                Fetch Repos
+            </button>
+        </form>
+
+        <!-- Repository List Container -->
+        <div id="repoList" class="space-y-4">
+            <p class="text-center text-gray-500">Enter a username and click 'Fetch Repos' to get started!</p>
+        </div>
+    </div>
+
+    <!-- Raw file content popup -->
+    <div id="rawContentPopup" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50">
+        <div class="bg-white max-w-2xl w-full rounded-lg shadow-lg overflow-hidden">
+            <div class="flex justify-between items-center px-4 py-2 bg-gray-200 rounded-t-lg">
+                <h2 class="font-bold text-lg" id="rawContentFilename"></h2>
+                <button onclick="closePopup('rawContentPopup')" class="text-red-600 text-xl font-bold rounded-full w-8 h-8 flex items-center justify-center hover:bg-gray-300 transition-colors">&times;</button>
+            </div>
+            <pre class="p-4 overflow-auto text-sm max-h-96" id="rawContent"></pre>
+            <div class="p-2 border-t bg-gray-100 flex justify-end rounded-b-lg">
+                <button onclick="copyRawContent()" class="bg-blue-600 text-white px-4 py-1 rounded-lg hover:bg-blue-700 transition-colors">Copy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image preview popup -->
+    <div id="imagePopup" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50">
+        <div class="bg-white max-w-2xl w-full rounded-lg shadow-lg overflow-hidden">
+            <div class="flex justify-between items-center px-4 py-2 bg-gray-200 rounded-t-lg">
+                <h2 class="font-bold text-lg" id="imageFilename"></h2>
+                <button onclick="closePopup('imagePopup')" class="text-red-600 text-xl font-bold rounded-full w-8 h-8 flex items-center justify-center hover:bg-gray-300 transition-colors">&times;</button>
+            </div>
+            <div class="p-4 flex justify-center items-center max-h-96 overflow-auto">
+                <img id="imagePreview" src="" alt="File Preview" class="max-w-full max-h-full object-contain">
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Alert Message -->
+    <div id="customAlert" class="custom-alert"></div>
+
+    <script>
+        const categoryEmojis = {
+            GALLERY: "🖼️",
+            WORKSHOP: "🛠️",
+            BACKBURNER: "⏳",
+            SHELVED: "📦",
+            GRAVEYARD: "⚰️",
+            OTHER: "❓"
+        };
+
+        const usernameInput = document.getElementById('usernameInput');
+        const userForm = document.getElementById('userForm');
+        const repoList = document.getElementById('repoList');
+        const rawContentPopup = document.getElementById('rawContentPopup');
+        const rawContentFilename = document.getElementById('rawContentFilename');
+        const rawContent = document.getElementById('rawContent');
+        const imagePopup = document.getElementById('imagePopup');
+        const imageFilename = document.getElementById('imageFilename');
+        const imagePreview = document.getElementById('imagePreview');
+        const customAlert = document.getElementById('customAlert');
+
+        /**
+         * Event listener for the form submission to fetch repositories.
+         * @param {Event} e The form submission event.
+         */
+        userForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = usernameInput.value.trim();
+            if (username) {
+                fetchRepos(username);
+            } else {
+                showCustomAlert("Please enter a GitHub username.");
+            }
+        });
+
+        /**
+         * Shows a custom alert message at the top of the screen.
+         * @param {string} message The message to display.
+         */
+        function showCustomAlert(message) {
+            customAlert.textContent = message;
+            customAlert.classList.add('show');
+            setTimeout(() => {
+                customAlert.classList.remove('show');
+            }, 2000);
+        }
+
+        /**
+         * Parses a repository's description to determine its category.
+         * @param {string} description The repository description.
+         * @returns {{category: string, cleanDesc: string}} The category and cleaned description.
+         */
+        function getRepoCategory(description) {
+            let raw = description || '';
+            let category = 'OTHER';
+            let cleanDesc = raw.trim();
+
+            if (raw.toLowerCase().includes('dead')) {
+                category = 'GRAVEYARD';
+                cleanDesc = raw.replace(/dead[\s:-]*/i, '').trim();
+            } else {
+                const match = raw.match(/^([A-Z]+)[\s:-]+(.*)/i);
+                if (match && categoryEmojis.hasOwnProperty(match[1].toUpperCase())) {
+                    category = match[1].toUpperCase();
+                    cleanDesc = match[2].trim();
+                }
+            }
+            return { category, cleanDesc };
+        }
+
+        /**
+         * Fetches GitHub repositories for the specified username and displays them categorized.
+         * @param {string} username The GitHub username.
+         */
+        async function fetchRepos(username) {
+            repoList.innerHTML = '<p class="text-center text-gray-500">Loading repositories...</p>';
+            try {
+                const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100`);
+                if (!res.ok) {
+                    throw new Error(`GitHub API error: ${res.statusText}`);
+                }
+                const repos = await res.json();
+                if (repos.length === 0) {
+                    repoList.innerHTML = `<p class="text-center text-gray-500">No repositories found for ${username}.</p>`;
+                    return;
+                }
+
+                const categories = {
+                    GALLERY: [], WORKSHOP: [], BACKBURNER: [], SHELVED: [], GRAVEYARD: [], OTHER: []
+                };
+
+                repos.forEach(repo => {
+                    const { category, cleanDesc } = getRepoCategory(repo.description);
+                    categories[category].push({ ...repo, category, cleanDesc });
+                });
+
+                repoList.innerHTML = '';
+                const sortedCategoryNames = ['GALLERY', 'WORKSHOP', 'BACKBURNER', 'SHELVED', 'GRAVEYARD', 'OTHER'];
+
+                for (const cat of sortedCategoryNames) {
+                    const reposInCategory = categories[cat];
+                    if (reposInCategory.length === 0) continue;
+
+                    const isCollapsed = localStorage.getItem(`collapsed-${cat}`) === "true";
+
+                    const section = document.createElement('section');
+                    section.className = "mb-4 rounded-lg overflow-hidden";
+                    section.innerHTML = `
+                        <div class="cursor-pointer bg-gray-200 p-3 rounded-t-lg font-bold text-lg flex justify-between items-center hover:bg-gray-300 transition-colors" onclick="toggleCategory('${cat}')">
+                            <span>${categoryEmojis[cat] || ''} ${cat} (${reposInCategory.length})</span>
+                            <span id="toggle-${cat}" class="text-xl transition-transform transform ${isCollapsed ? '' : 'rotate-90'}">${isCollapsed ? '&#x25B8;' : '&#x25BE;'}</span>
+                        </div>
+                        <div class="space-y-3 p-3 bg-white ${isCollapsed ? 'hidden' : ''}" id="group-${cat}"></div>
+                    `;
+                    repoList.appendChild(section);
+
+                    const group = section.querySelector(`#group-${cat}`);
+                    reposInCategory.sort((a, b) => a.name.localeCompare(b.name));
+
+                    for (const repo of reposInCategory) {
+                        const container = document.createElement('div');
+                        container.className = "bg-white rounded-lg shadow-sm p-4 border border-gray-200";
+                        container.innerHTML = `
+                            <h3 class="text-xl font-semibold mb-2 flex flex-col sm:flex-row sm:justify-between sm:items-center">
+                                <div class="mb-2 sm:mb-0">
+                                    <a href="${repo.html_url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">
+                                        ${repo.name}
+                                    </a>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <button class="text-sm bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600 transition-colors shadow-sm" onclick="openRepoPreview('${repo.name}', '${username}')">Open index.html</button>
+                                    <button class="text-sm bg-gray-600 text-white px-3 py-1 rounded-md hover:bg-gray-700 transition-colors shadow-sm" onclick="toggleFiles('${repo.name}', '${username}', this)">Show Files</button>
+                                </div>
+                            </h3>
+                            <p class="text-sm text-gray-700 mb-3">${repo.cleanDesc || 'No description'}</p>
+                            <div class="text-xs text-gray-500 flex flex-wrap gap-x-4">
+                                <span>🌟 ${repo.stargazers_count}</span>
+                                <span>🛠 ${repo.language || 'Unknown'}</span>
+                                <span>⏱ ${new Date(repo.updated_at).toLocaleDateString()}</span>
+                            </div>
+                            <ul id="files-${repo.name}" class="ml-4 mt-3 space-y-1 hidden border-t border-gray-200 pt-3"></ul>
+                        `;
+                        group.appendChild(container);
+                    }
+                }
+            } catch (error) {
+                console.error("Error fetching repositories:", error);
+                repoList.innerHTML = `<p class="text-center text-red-500">Failed to load repositories. Error: ${error.message}</p>`;
+                showCustomAlert("Failed to load repositories.");
+            }
+        }
+
+        /**
+         * Toggles the visibility of the file list for a given repository.
+         * @param {string} repo The name of the repository.
+         * @param {string} username The GitHub username.
+         * @param {HTMLElement} button The button element that triggered the toggle.
+         */
+        async function toggleFiles(repo, username, button) {
+            const fileList = document.getElementById(`files-${repo}`);
+            const isVisible = !fileList.classList.contains("hidden");
+
+            if (isVisible) {
+                fileList.classList.add("hidden");
+                button.textContent = "Show Files";
+            } else {
+                if (fileList.childNodes.length === 0) {
+                    fileList.innerHTML = '<li class="text-gray-500">Loading files...</li>';
+                    try {
+                        const res = await fetch(`https://api.github.com/repos/${username}/${repo}/contents`);
+                        if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
+                        const files = await res.json();
+                        fileList.innerHTML = ''; // Clear loading message
+                        if (files.length === 0) {
+                            fileList.innerHTML = '<li class="text-gray-500">No files found.</li>';
+                        } else {
+                            files.forEach(file => {
+                                const li = document.createElement("li");
+                                li.className = "flex items-center justify-between text-sm pr-2";
+                                // The filename link now *only* shows raw content.
+                                li.innerHTML = `
+                                    <span class="text-blue-700 hover:underline cursor-pointer" onclick="showRawContent('${repo}', '${username}', '${file.path}', '${file.name}')">${file.name}</span>
+                                    <button class="ml-2 text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-md hover:bg-gray-300 transition-colors" onclick="previewFile('${repo}', '${username}', '${file.path}', '${file.name}')">Preview</button>
+                                `;
+                                fileList.appendChild(li);
+                            });
+                        }
+                    } catch (error) {
+                        console.error("Error fetching files:", error);
+                        fileList.innerHTML = `<li class="text-red-500">Error loading files.</li>`;
+                        showCustomAlert(`Failed to load files: ${error.message}`);
+                    }
+                }
+                fileList.classList.remove("hidden");
+                button.textContent = "Hide Files";
+            }
+        }
+
+        /**
+         * Fetches and displays the raw content of a specific file in a popup.
+         * @param {string} repo The name of the repository.
+         * @param {string} username The GitHub username.
+         * @param {string} path The path to the file.
+         * @param {string} name The name of the file.
+         */
+        async function showRawContent(repo, username, path, name) {
+            // Close any other open popups first
+            closePopup('imagePopup');
+
+            rawContentFilename.textContent = `Loading ${name}...`;
+            rawContent.textContent = "";
+            rawContentPopup.classList.remove("hidden");
+            rawContentPopup.classList.add("flex");
+
+            try {
+                const res = await fetch(`https://api.github.com/repos/${username}/${repo}/contents/${path}`);
+                if (!res.ok) throw new Error(`GitHub API error: ${res.statusText}`);
+                const data = await res.json();
+                if (data.content) {
+                    const content = atob(data.content.replace(/\n/g, ''));
+                    rawContentFilename.textContent = name;
+                    rawContent.textContent = content;
+                } else {
+                    rawContentFilename.textContent = `Error loading ${name}`;
+                    rawContent.textContent = "File content is not available.";
+                }
+            } catch (error) {
+                console.error("Error fetching file content:", error);
+                showCustomAlert(`Failed to load file content.`);
+                rawContentFilename.textContent = `Error loading ${name}`;
+                rawContent.textContent = error.message;
+            }
+        }
+
+        /**
+         * Closes a specific popup window.
+         * @param {string} popupId The ID of the popup to close.
+         */
+        function closePopup(popupId) {
+            const popup = document.getElementById(popupId);
+            popup.classList.add("hidden");
+            popup.classList.remove("flex");
+        }
+        
+        /**
+         * Copies the content of the raw content popup to the clipboard.
+         */
+        function copyRawContent() {
+            const content = rawContent.textContent;
+            try {
+                navigator.clipboard.writeText(content).then(() => {
+                    showCustomAlert("Copied to clipboard!");
+                }).catch(err => {
+                    throw err; // Fallback if clipboard API fails
+                });
+            } catch (err) {
+                const tempInput = document.createElement('textarea');
+                tempInput.value = content;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+                showCustomAlert("Copied to clipboard!");
+            }
+        }
+
+        /**
+         * Previews the file based on its type.
+         * @param {string} repo The name of the repository.
+         * @param {string} username The GitHub username.
+         * @param {string} path The path to the file.
+         * @param {string} name The name of the file.
+         */
+        function previewFile(repo, username, path, name) {
+            const fileExtension = name.split('.').pop().toLowerCase();
+            const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'];
+
+            if (fileExtension === 'html') {
+                // Open HTML files in a new tab to see the live preview
+                openRepoPreview(repo, username);
+            } else if (imageExtensions.includes(fileExtension)) {
+                // For images, display them in a dedicated image modal
+                closePopup('rawContentPopup');
+                imageFilename.textContent = name;
+                imagePreview.src = `https://raw.githubusercontent.com/${username}/${repo}/main/${path}`;
+                imagePopup.classList.remove("hidden");
+                imagePopup.classList.add("flex");
+            } else {
+                // For all other files, fall back to showing the raw content
+                showRawContent(repo, username, path, name);
+                showCustomAlert("This file type cannot be rendered live, showing raw content instead.");
+            }
+        }
+
+        /**
+         * Opens the index.html of a repository in a new browser tab.
+         * @param {string} repo The name of the repository.
+         * @param {string} username The GitHub username.
+         */
+        function openRepoPreview(repo, username) {
+            const url = `https://${username}.github.io/${repo}/`;
+            window.open(url, '_blank', 'noopener,noreferrer');
+            showCustomAlert("Opened preview in a new tab.");
+        }
+
+        /**
+         * Toggles the visibility of a category section and saves its state to local storage.
+         * @param {string} cat The category name.
+         */
+        function toggleCategory(cat) {
+            const group = document.getElementById(`group-${cat}`);
+            const toggle = document.getElementById(`toggle-${cat}`);
+            const isHidden = group.classList.toggle("hidden");
+
+            // Toggle icon for a more modern look
+            if (isHidden) {
+                toggle.innerHTML = '&#x25B8;'; // Right-pointing triangle
+                toggle.classList.remove('rotate-90');
+            } else {
+                toggle.innerHTML = '&#x25BE;'; // Down-pointing triangle
+                toggle.classList.add('rotate-90');
+            }
+
+            localStorage.setItem(`collapsed-${cat}`, isHidden);
+        }
+    </script>
+</body>
+</html>
