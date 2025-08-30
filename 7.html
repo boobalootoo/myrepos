@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My GitHub Repos</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; }
+    .custom-alert {
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      background-color: #111827; color: white; padding: 10px 20px; border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2); z-index: 10000; opacity: 0;
+      transition: opacity .25s ease-in-out; pointer-events: none;
+    }
+    .custom-alert.show { opacity: 1; }
+    .folder-icon {
+      display:inline-block; margin-right:8px; width:16px; height:16px;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z'%3E%3C/path%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:center;
+    }
+    .rot { transform: rotate(90deg); }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+  <div class="max-w-7xl mx-auto p-4 space-y-4">
+    <h1 class="text-3xl font-bold text-center">My GitHub Repositories</h1>
+
+    <!-- Controls -->
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+      <div class="md:col-span-3 flex gap-2">
+        <input id="usernameInput" type="text" value="boobalootoo"
+          class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="GitHub username">
+      </div>
+
+      <div class="md:col-span-3 flex gap-2">
+        <button id="updateBtn"
+          class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700">Update</button>
+        <button id="clearCacheBtn"
+          class="bg-gray-600 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700">Clear Cache</button>
+      </div>
+
+      <div class="md:col-span-3 flex gap-2">
+        <input id="searchRepos" type="text" placeholder="Search repos"
+          class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <input id="searchFiles" type="text" placeholder="Search files/folders"
+          class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+
+      <div class="md:col-span-3 flex flex-col md:flex-row gap-2 items-stretch md:items-center">
+        <div class="flex items-center gap-2">
+          <label class="text-sm">View</label>
+          <select id="viewMode" class="px-2 py-2 border rounded-lg">
+            <option value="category">By Category</option>
+            <option value="recent">Most Recent</option>
+          </select>
+        </div>
+        <div id="recentControls" class="hidden items-center gap-2">
+          <label class="text-sm">Scope</label>
+          <select id="recentScope" class="px-2 py-2 border rounded-lg">
+            <option value="repos">Repos</option>
+            <option value="files">Files</option>
+          </select>
+          <label class="text-sm">Show</label>
+          <input id="recentCount" type="range" min="5" max="100" step="5" value="20">
+          <span id="recentCountLabel" class="text-sm w-10 text-right">20</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-gray-600">
+      Tip: Nothing loads until you interact. Click a category header to fetch repo names. Click “Load files” on a repo to fetch its files.
+      File “last edited” times are fetched lazily and cached to reduce API calls.
+    </p>
+
+    <!-- Category list -->
+    <div id="repoList" class="space-y-4">
+      <p class="text-center text-gray-500">Ready. No API calls have been made yet.</p>
+    </div>
+  </div>
+
+  <!-- Raw file content popup -->
+  <div id="rawContentPopup" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50">
+    <div class="bg-white max-w-2xl w-full rounded-lg shadow-lg overflow-hidden">
+      <div class="flex justify-between items-center px-4 py-2 bg-gray-200">
+        <h2 class="font-bold text-lg" id="rawContentFilename"></h2>
+        <button onclick="closePopup('rawContentPopup')" class="text-red-600 text-xl font-bold rounded-full w-8 h-8 flex items-center justify-center hover:bg-gray-300">&times;</button>
+      </div>
+      <pre class="p-4 overflow-auto text-sm max-h-96" id="rawContent"></pre>
+      <div class="p-2 border-t bg-gray-100 flex justify-end">
+        <button onclick="copyRawContent()" class="bg-blue-600 text-white px-4 py-1 rounded-lg hover:bg-blue-700">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image preview popup -->
+  <div id="imagePopup" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50">
+    <div class="bg-white max-w-2xl w-full rounded-lg shadow-lg overflow-hidden">
+      <div class="flex justify-between items-center px-4 py-2 bg-gray-200">
+        <h2 class="font-bold text-lg" id="imageFilename"></h2>
+        <button onclick="closePopup('imagePopup')" class="text-red-600 text-xl font-bold rounded-full w-8 h-8 flex items-center justify-center hover:bg-gray-300">&times;</button>
+      </div>
+      <div class="p-4 flex justify-center items-center max-h-96 overflow-auto">
+        <img id="imagePreview" src="" alt="File Preview" class="max-w-full max-h-full object-contain">
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom alert -->
+  <div id="customAlert" class="custom-alert"></div>
+
+  <script>
+    // ---------- UI helpers ----------
+    const el = id => document.getElementById(id);
+    const customAlert = el('customAlert');
+    function showAlert(message) {
+      customAlert.textContent = message;
+      customAlert.classList.add('show');
+      setTimeout(() => customAlert.classList.remove('show'), 2000);
+    }
+
+    function closePopup(id){ const p = el(id); p.classList.add("hidden"); p.classList.remove("flex"); }
+    function copyRawContent(){
+      const content = el('rawContent').textContent;
+      navigator.clipboard?.writeText(content).then(()=>showAlert("Copied!")).catch(()=>{
+        const t=document.createElement('textarea'); t.value=content; document.body.appendChild(t);
+        t.select(); document.execCommand('copy'); t.remove(); showAlert("Copied!");
+      });
+    }
+
+    // ---------- Category config ----------
+    const categoryEmojis = {
+      GALLERY:"🖼️", WORKSHOP:"🛠️", BACKBURNER:"⏳", SHELVED:"📦", GRAVEYARD:"⚰️", OTHER:"❓"
+    };
+    const sortedCategoryNames = ['GALLERY','WORKSHOP','BACKBURNER','SHELVED','GRAVEYARD','OTHER'];
+
+    // ---------- Persistence ----------
+    // Everything under a single namespace per username.
+    function ns(username){ return `gh_browser::${username}`; }
+    function loadState(username){
+      const raw = localStorage.getItem(ns(username));
+      return raw ? JSON.parse(raw) : {
+        repos: [],        // raw repo objects
+        reposFetchedAt: 0,
+        filesByRepo: {},  // { [repoName]: { "<path or root>": [entries...] } }
+        fileMeta: {},     // { `${repoName}|${path}`: { lastEditedISO, lastEditedSHA } }
+        lastAccess: {},   // { repoName or repoName|path : timestamp }
+        categoriesCollapsed: Object.fromEntries(sortedCategoryNames.map(c=>[c,true]))
+      };
+    }
+    function saveState(username, state){
+      localStorage.setItem(ns(username), JSON.stringify(state));
+    }
+    function markAccess(state, key){ state.lastAccess[key] = Date.now(); }
+
+    // ---------- API wrapper (rate-limit aware) ----------
+    async function ghFetch(url){
+      const res = await fetch(url, { headers: { 'Accept': 'application/vnd.github+json' }});
+      if (res.status === 403) {
+        const remain = res.headers.get('X-RateLimit-Remaining');
+        const reset = res.headers.get('X-RateLimit-Reset');
+        if (remain === "0" && reset) {
+          const ms = Math.max(0, (+reset*1000 - Date.now()));
+          const min = Math.ceil(ms/60000);
+          showAlert(`Rate limit hit. Try again in ~${min} min`);
+        }
+      }
+      if (!res.ok) throw new Error(`GitHub API error: ${res.status} ${res.statusText}`);
+      return { data: await res.json(), headers: res.headers };
+    }
+
+    // Pagination for repos (per_page=100)
+    async function fetchAllRepos(username){
+      let page=1, all=[];
+      while(true){
+        const { data } = await ghFetch(`https://api.github.com/users/${username}/repos?per_page=100&page=${page}&sort=updated`);
+        if (!Array.isArray(data) || data.length===0) break;
+        all = all.concat(data);
+        page++;
+      }
+      return all;
+    }
+
+    // Fetch directory contents (path can be '' for root)
+    async function fetchRepoPath(username, repo, path){
+      const p = path ? `/${encodeURIComponent(path).replace(/%2F/g,'/')}` : '';
+      const { data } = await ghFetch(`https://api.github.com/repos/${username}/${repo}/contents${p}`);
+      // normalize sort folders first then files by name
+      data.sort((a,b)=>{
+        if (a.type!==b.type) return a.type==='dir' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      return data;
+    }
+
+    // Fetch last edited for a file (latest commit touching that path)
+    async function fetchFileLastEdited(username, repo, path){
+      const encPath = encodeURIComponent(path).replace(/%2F/g,'/');
+      const { data } = await ghFetch(`https://api.github.com/repos/${username}/${repo}/commits?path=${encPath}&per_page=1`);
+      if (!Array.isArray(data) || data.length===0) return null;
+      const c = data[0];
+      return { lastEditedISO: c.commit?.committer?.date || c.commit?.author?.date, lastEditedSHA: c.sha };
+    }
+
+    // ---------- Categorization ----------
+    function getRepoCategory(description){
+      let raw = description || '';
+      let category = 'OTHER';
+      let cleanDesc = raw.trim();
+      if (/dead/i.test(raw)) {
+        category='GRAVEYARD'; cleanDesc = raw.replace(/dead[\s:-]*/i,'').trim();
+      } else {
+        const match = raw.match(/^([A-Z]+)[\s:-]+(.*)/i);
+        if (match && categoryEmojis.hasOwnProperty(match[1].toUpperCase())) {
+          category = match[1].toUpperCase();
+          cleanDesc = match[2].trim();
+        }
+      }
+      return { category, cleanDesc };
+    }
+
+    // ---------- DOM refs ----------
+    const repoList = el('repoList');
+    const usernameInput = el('usernameInput');
+    const updateBtn = el('updateBtn');
+    const clearCacheBtn = el('clearCacheBtn');
+    const searchReposInput = el('searchRepos');
+    const searchFilesInput = el('searchFiles');
+    const viewModeSel = el('viewMode');
+    const recentControls = el('recentControls');
+    const recentScopeSel = el('recentScope');
+    const recentCountRange = el('recentCount');
+    const recentCountLabel = el('recentCountLabel');
+
+    // ---------- Renderers ----------
+    function renderScaffold(username){
+      repoList.innerHTML = '';
+      // Build empty category sections (collapsed by default)
+      sortedCategoryNames.forEach(cat=>{
+        const section = document.createElement('section');
+        section.className = "rounded-lg overflow-hidden border border-gray-200";
+        section.innerHTML = `
+          <div class="cursor-pointer bg-gray-100 p-3 font-bold text-lg flex justify-between items-center hover:bg-gray-200"
+               data-cat="${cat}">
+            <span>${categoryEmojis[cat]} ${cat}</span>
+            <span class="text-xl">&#x25B8;</span>
+          </div>
+          <div class="p-3 bg-white hidden" id="group-${cat}">
+            <p class="text-gray-500 text-sm">Click a category header to load repos.</p>
+          </div>
+        `;
+        repoList.appendChild(section);
+        // click handler (lazy fetch)
+        section.querySelector('[data-cat]').addEventListener('click', ()=>onCategoryToggle(username, cat));
+      });
+    }
+
+    function repoCardHTML(repo, cleanDesc, username){
+      const pushed = new Date(repo.pushed_at || repo.updated_at);
+      return `
+        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200" data-repo="${repo.name}">
+          <h3 class="text-xl font-semibold mb-2 flex flex-col sm:flex-row sm:justify-between sm:items-center">
+            <div class="mb-2 sm:mb-0">
+              <a href="${repo.html_url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${repo.name}</a>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button class="text-sm bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700"
+                      data-action="openPreview" data-repo="${repo.name}">Open index.html</button>
+              <button class="text-sm bg-gray-700 text-white px-3 py-1 rounded-md hover:bg-gray-800"
+                      data-action="toggleFiles" data-repo="${repo.name}" data-path="">Load files</button>
+            </div>
+          </h3>
+          <p class="text-sm text-gray-700 mb-3">${cleanDesc || 'No description'}</p>
+          <div class="text-xs text-gray-500 flex flex-wrap gap-x-4">
+            <span>⭐ ${repo.stargazers_count}</span>
+            <span>🧱 ${repo.language || 'Unknown'}</span>
+            <span>🕒 ${pushed.toLocaleString()}</span>
+          </div>
+          <ul id="files-${repo.name}" class="ml-4 mt-3 space-y-1 hidden border-t border-gray-200 pt-3"></ul>
+        </div>
+      `;
+    }
+
+    function attachRepoCardEvents(container, username){
+      container.querySelectorAll('[data-action="openPreview"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const repo = btn.dataset.repo;
+          const url = `https://${username}.github.io/${repo}/`;
+          window.open(url, '_blank', 'noopener,noreferrer');
+          showAlert("Opened preview in a new tab.");
+        });
+      });
+      container.querySelectorAll('[data-action="toggleFiles"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>togglePathContents(username, btn.dataset.repo, btn.dataset.path || '', btn));
+      });
+    }
+
+    async function onCategoryToggle(username, cat){
+      const state = loadState(username);
+      const group = el(`group-${cat}`);
+      const header = group.previousElementSibling;
+      const arrow = header.querySelector('span:last-child');
+      const wasHidden = group.classList.contains('hidden');
+
+      // Toggle visual
+      if (wasHidden) { group.classList.remove('hidden'); arrow.innerHTML = '&#x25BE;'; }
+      else { group.classList.add('hidden'); arrow.innerHTML = '&#x25B8;'; }
+      state.categoriesCollapsed[cat] = !wasHidden;
+      saveState(username, state);
+
+      // If expanding AND this category hasn't been filled yet, fill from cache or fetch
+      if (wasHidden && group.dataset.loaded !== "true") {
+        const repos = await ensureRepos(username);
+        const list = document.createElement('div');
+        list.className = "space-y-3";
+        // Filter by category & search
+        const searchTerm = (searchReposInput.value||'').toLowerCase();
+        repos.forEach(repo=>{
+          const { category, cleanDesc } = getRepoCategory(repo.description);
+          if (category !== cat) return;
+          if (searchTerm && !repo.name.toLowerCase().includes(searchTerm) && !(cleanDesc||'').toLowerCase().includes(searchTerm)) return;
+          const temp = document.createElement('div');
+          temp.innerHTML = repoCardHTML(repo, cleanDesc, username);
+          const card = temp.firstElementChild;
+          list.appendChild(card);
+        });
+        group.innerHTML = ''; group.appendChild(list);
+        attachRepoCardEvents(group, username);
+        group.dataset.loaded = "true";
+      }
+    }
+
+    // Ensure repos are present in cache; on cold start, fetch; on “Update” button, refresh.
+    async function ensureRepos(username, force=false){
+      const state = loadState(username);
+      if (!force && state.repos && state.repos.length) return state.repos;
+      // Fetch all repos paginated
+      repoList.insertAdjacentHTML('afterbegin', `<p id="loadingMsg" class="text-center text-gray-500">Loading repositories…</p>`);
+      try{
+        const repos = await fetchAllRepos(username);
+        state.repos = repos;
+        state.reposFetchedAt = Date.now();
+        saveState(username, state);
+        showAlert(`Loaded ${repos.length} repos`);
+        return repos;
+      } finally {
+        el('loadingMsg')?.remove();
+      }
+    }
+
+    // ---------- Files / folders ----------
+    async function togglePathContents(username, repo, path, button){
+      const listId = path ? `folder-list-${(repo+'|'+path).replace(/[^a-z0-9_-]/gi,'-')}` : `files-${repo}`;
+      let fileList = el(listId);
+      if (!fileList) {
+        // nested container doesn’t exist yet (from folder row)
+        fileList = document.createElement('ul');
+        fileList.id = listId;
+        fileList.className = "ml-4 mt-1 hidden space-y-1 border-l border-gray-200 pl-2";
+        // the button belongs to a folder row; insert after it
+        button.closest('li').appendChild(fileList);
+      }
+      const isVisible = !fileList.classList.contains("hidden");
+      if (isVisible){
+        fileList.classList.add("hidden");
+        if (button.dataset.pathType === 'folder') button.textContent = "Open Folder";
+        else button.textContent = "Load files";
+        return;
+      }
+
+      const state = loadState(username);
+      const repoCache = state.filesByRepo[repo] || {};
+      const cacheKey = path || '__root__';
+      let entries = repoCache[cacheKey];
+
+      if (!entries){
+        // fetch
+        fileList.innerHTML = '<li class="text-gray-500">Loading…</li>';
+        try {
+          entries = await fetchRepoPath(username, repo, path);
+          // cache & mark access
+          if (!state.filesByRepo[repo]) state.filesByRepo[repo] = {};
+          state.filesByRepo[repo][cacheKey] = entries;
+          markAccess(state, `${repo}|${path||''}`);
+          saveState(username, state);
+        } catch (e){
+          fileList.innerHTML = `<li class="text-red-500">Error: ${e.message}</li>`;
+          return;
+        }
+      }
+
+      // render
+      fileList.innerHTML = '';
+      const imageExt = ['png','jpg','jpeg','gif','svg','webp','avif'];
+      entries.forEach(file=>{
+        const li = document.createElement('li');
+        li.className = "flex items-center justify-between text-sm pr-2";
+        if (file.type === 'dir'){
+          li.innerHTML = `
+            <div class="flex-1 flex items-center">
+              <span class="folder-icon"></span>
+              <span class="font-semibold">${file.name}</span>
+            </div>
+            <div class="flex gap-2 items-center">
+              <button class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-md hover:bg-gray-300"
+                data-path-type="folder"
+                data-action="openFolder"
+                data-repo="${repo}"
+                data-path="${file.path}">Open Folder</button>
+            </div>
+            <ul id="folder-list-${(repo+'|'+file.path).replace(/[^a-z0-9_-]/gi,'-')}" class="ml-4 mt-1 hidden space-y-1 border-l border-gray-200 pl-2"></ul>
+          `;
+        } else {
+          const name = file.name;
+          const ext = name.split('.').pop().toLowerCase();
+          // last edited placeholder (lazy)
+          const metaKey = `${repo}|${file.path}`;
+          const meta = (loadState(username).fileMeta || {})[metaKey];
+          const lastEdited = meta?.lastEditedISO ? new Date(meta.lastEditedISO).toLocaleString() : '—';
+          li.innerHTML = `
+            <div class="flex-1 flex items-center gap-2">
+              <span class="text-blue-700 hover:underline cursor-pointer" data-action="showRaw" data-repo="${repo}" data-path="${file.path}" data-name="${name}">${name}</span>
+              <span class="text-xs text-gray-500">Last edited: <span data-meta="${metaKey}">${lastEdited}</span></span>
+            </div>
+            <div class="flex gap-2">
+              <button class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-md hover:bg-gray-300"
+                data-action="preview" data-repo="${repo}" data-path="${file.path}" data-name="${name}">Preview</button>
+              <button class="text-xs bg-emerald-200 text-emerald-900 px-2 py-1 rounded-md hover:bg-emerald-300"
+                data-action="fetchMeta" data-repo="${repo}" data-path="${file.path}">Get last edited</button>
+            </div>
+          `;
+          // If image and want quick preview, clicking Preview will open modal.
+        }
+        fileList.appendChild(li);
+      });
+
+      // bind nested events
+      fileList.querySelectorAll('[data-action="openFolder"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>togglePathContents(username, btn.dataset.repo, btn.dataset.path, btn));
+      });
+      fileList.querySelectorAll('[data-action="preview"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const { repo, path, name } = btn.dataset;
+          const ext = name.split('.').pop().toLowerCase();
+          const imgTypes = ['png','jpg','jpeg','gif','svg','webp','avif'];
+          if (ext === 'html'){
+            const url = `https://${username}.github.io/${repo}/${path}`;
+            window.open(url, '_blank', 'noopener,noreferrer'); showAlert("Opened preview in a new tab.");
+          } else if (imgTypes.includes(ext)){
+            el('imageFilename').textContent = name;
+            el('imagePreview').src = `https://raw.githubusercontent.com/${username}/${repo}/main/${path}`;
+            const pop = el('imagePopup'); pop.classList.remove("hidden"); pop.classList.add("flex");
+          } else {
+            // fallback to raw
+            showRawContent(repo, username, path, name);
+            showAlert("Rendering raw content.");
+          }
+        });
+      });
+      fileList.querySelectorAll('[data-action="showRaw"]').forEach(span=>{
+        span.addEventListener('click', ()=>{
+          const { repo, path, name } = span.dataset;
+          showRawContent(repo, username, path, name);
+        });
+      });
+      fileList.querySelectorAll('[data-action="fetchMeta"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>resolveFileMeta(username, repo, btn.dataset.path));
+      });
+
+      fileList.classList.remove("hidden");
+      if (button.dataset.pathType === 'folder') button.textContent = "Close Folder";
+      else button.textContent = "Hide files";
+
+      // mark access
+      const state2 = loadState(username);
+      markAccess(state2, `${repo}|${path||''}`); saveState(username, state2);
+      // apply file search filter on render
+      applyFileSearch();
+    }
+
+    async function resolveFileMeta(username, repo, path){
+      const state = loadState(username);
+      const key = `${repo}|${path}`;
+      if (!state.fileMeta[key]){
+        const meta = await fetchFileLastEdited(username, repo, path);
+        if (meta){
+          state.fileMeta[key] = meta;
+          saveState(username, state);
+        }
+      }
+      const slot = document.querySelector(`[data-meta="${CSS.escape(key)}"]`);
+      if (slot){
+        const m = loadState(username).fileMeta[key];
+        slot.textContent = m?.lastEditedISO ? new Date(m.lastEditedISO).toLocaleString() : '—';
+      }
+    }
+
+    async function showRawContent(repo, username, path, name){
+      closePopup('imagePopup');
+      el('rawContentFilename').textContent = `Loading ${name}…`;
+      el('rawContent').textContent = "";
+      const popup = el('rawContentPopup'); popup.classList.remove("hidden"); popup.classList.add("flex");
+      try{
+        const p = path ? `/${encodeURIComponent(path).replace(/%2F/g,'/')}` : '';
+        const { data } = await ghFetch(`https://api.github.com/repos/${username}/${repo}/contents${p}`);
+        if (data.content){
+          const content = atob(data.content.replace(/\n/g,''));
+          el('rawContentFilename').textContent = name;
+          el('rawContent').textContent = content;
+        } else {
+          el('rawContentFilename').textContent = `Error loading ${name}`;
+          el('rawContent').textContent = "File content is not available.";
+        }
+      } catch(e){
+        el('rawContentFilename').textContent = `Error loading ${name}`;
+        el('rawContent').textContent = e.message;
+        showAlert("Failed to load file content.");
+      }
+    }
+
+    // ---------- Search & Filters ----------
+    function debounce(fn, ms=250){
+      let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); };
+    }
+
+    const applyRepoSearch = debounce(()=>{
+      // Only affects already-rendered category groups; “Recent” mode handled separately.
+      const term = (searchReposInput.value||'').toLowerCase();
+      document.querySelectorAll('[id^="group-"]').forEach(group=>{
+        if (group.classList.contains('hidden')) return;
+        group.querySelectorAll('[data-repo]').forEach(card=>{
+          const name = card.getAttribute('data-repo').toLowerCase();
+          const desc = (card.querySelector('p')?.textContent||'').toLowerCase();
+          card.style.display = (term && !name.includes(term) && !desc.includes(term)) ? 'none' : '';
+        });
+      });
+    }, 200);
+
+    const applyFileSearch = debounce(()=>{
+      const term = (searchFilesInput.value||'').toLowerCase();
+      document.querySelectorAll('ul[id^="files-"], ul[id^="folder-list-"]').forEach(list=>{
+        if (list.classList.contains('hidden')) return;
+        list.querySelectorAll('li').forEach(li=>{
+          const text = li.textContent.toLowerCase();
+          li.style.display = term && !text.includes(term) ? 'none' : '';
+        });
+      });
+    }, 200);
+
+    searchReposInput.addEventListener('input', applyRepoSearch);
+    searchFilesInput.addEventListener('input', applyFileSearch);
+
+    // ---------- Recent mode ----------
+    viewModeSel.addEventListener('change', ()=>{
+      const mode = viewModeSel.value;
+      if (mode === 'recent'){ recentControls.classList.remove('hidden'); renderRecent(); }
+      else { recentControls.classList.add('hidden'); renderScaffold(usernameInput.value.trim()); }
+    });
+    recentScopeSel.addEventListener('change', renderRecent);
+    recentCountRange.addEventListener('input', ()=>{
+      recentCountLabel.textContent = recentCountRange.value;
+    });
+    recentCountRange.addEventListener('change', renderRecent);
+
+    async function renderRecent(){
+      const username = usernameInput.value.trim();
+      if (!username){ showAlert("Enter a username first."); return; }
+      const count = parseInt(recentCountRange.value,10);
+      const scope = recentScopeSel.value;
+
+      // Ensure repos (from cache or fetch)
+      const repos = await ensureRepos(username);
+      repoList.innerHTML = '';
+
+      if (scope === 'repos'){
+        const term = (searchReposInput.value||'').toLowerCase();
+        const sorted = [...repos]
+          .filter(r=>{
+            if (!term) return true;
+            const desc = (r.description||'').toLowerCase();
+            return r.name.toLowerCase().includes(term) || desc.includes(term);
+          })
+          .sort((a,b)=> new Date(b.pushed_at||b.updated_at) - new Date(a.pushed_at||a.updated_at))
+          .slice(0, count);
+
+        const wrap = document.createElement('div'); wrap.className="space-y-3";
+        sorted.forEach(repo=>{
+          const { cleanDesc } = getRepoCategory(repo.description);
+          const temp = document.createElement('div');
+          temp.innerHTML = repoCardHTML(repo, cleanDesc, username);
+          wrap.appendChild(temp.firstElementChild);
+        });
+        repoList.appendChild(wrap);
+        attachRepoCardEvents(repoList, username);
+      } else {
+        // Files scope: Use cached files first. If not enough meta, allow a fetch button with limit.
+        const state = loadState(username);
+
+        // Gather cached files with lastEdited and filter by search term
+        const term = (searchFilesInput.value||'').toLowerCase();
+        const filesWithMeta = [];
+        for (const [repoName, folders] of Object.entries(state.filesByRepo || {})){
+          for (const [keyPath, entries] of Object.entries(folders)){
+            for (const entry of entries){
+              if (entry.type !== 'file') continue;
+              const meta = state.fileMeta?.[`${repoName}|${entry.path}`];
+              if (!meta) continue;
+              const hay = `${repoName}/${entry.path}`.toLowerCase();
+              if (term && !hay.includes(term)) continue;
+              filesWithMeta.push({
+                repo: repoName,
+                path: entry.path,
+                name: entry.name,
+                lastEditedISO: meta.lastEditedISO
+              });
+            }
+          }
+        }
+        filesWithMeta.sort((a,b)=> new Date(b.lastEditedISO||0) - new Date(a.lastEditedISO||0));
+        const initial = filesWithMeta.slice(0, count);
+
+        const panel = document.createElement('div');
+        panel.className = "flex items-center justify-between bg-white border p-3 rounded-lg";
+        panel.innerHTML = `
+          <div class="text-sm">
+            Showing ${initial.length} cached files. ${initial.length < count ? `Need ${count-initial.length} more.`:''}
+          </div>
+          <div class="flex gap-2">
+            <button id="fetchMoreFiles" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Fetch missing last-edited (limit ${count})</button>
+          </div>
+        `;
+        repoList.appendChild(panel);
+
+        const list = document.createElement('div'); list.className="space-y-2 mt-2";
+        repoList.appendChild(list);
+
+        function renderFileRows(rows){
+          list.innerHTML = '';
+          rows.forEach(f=>{
+            const row = document.createElement('div');
+            row.className = "bg-white rounded border p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between";
+            row.innerHTML = `
+              <div class="font-mono text-sm break-all">${f.repo}/${f.path}</div>
+              <div class="text-xs text-gray-600">Last edited: ${f.lastEditedISO ? new Date(f.lastEditedISO).toLocaleString() : '—'}</div>
+            `;
+            list.appendChild(row);
+          });
+        }
+        renderFileRows(initial);
+
+        el('fetchMoreFiles').addEventListener('click', async ()=>{
+          // Strategy: iterate repos and their cached file lists; for each file missing meta,
+          // fetch commit meta until we have 'count' files total (respecting search term).
+          const refreshed = [...filesWithMeta];
+          const state2 = loadState(username);
+          let fetched = 0;
+          outer: for (const repo of repos){
+            const folders = state2.filesByRepo?.[repo.name];
+            if (!folders) continue;
+            for (const entries of Object.values(folders)){
+              for (const entry of entries){
+                if (entry.type !== 'file') continue;
+                const key = `${repo.name}|${entry.path}`;
+                if (state2.fileMeta?.[key]) continue; // already have
+                const hay = `${repo.name}/${entry.path}`.toLowerCase();
+                if (term && !hay.includes(term)) continue;
+                const meta = await fetchFileLastEdited(username, repo.name, entry.path);
+                if (meta){
+                  if (!state2.fileMeta) state2.fileMeta = {};
+                  state2.fileMeta[key] = meta;
+                  refreshed.push({ repo: repo.name, path: entry.path, name: entry.name, lastEditedISO: meta.lastEditedISO });
+                  fetched++;
+                  if (refreshed.length >= count) break outer;
+                }
+              }
+            }
+          }
+          saveState(username, state2);
+          refreshed.sort((a,b)=> new Date(b.lastEditedISO||0) - new Date(a.lastEditedISO||0));
+          renderFileRows(refreshed.slice(0, count));
+          showAlert(`Fetched ${fetched} file timestamps`);
+        });
+      }
+    }
+
+    // ---------- Events: Update / Clear cache ----------
+    updateBtn.addEventListener('click', async ()=>{
+      const username = usernameInput.value.trim();
+      if (!username) { showAlert("Enter a username first."); return; }
+      await ensureRepos(username, true);
+      if (viewModeSel.value === 'category') {
+        renderScaffold(username);
+      } else {
+        renderRecent();
+      }
+    });
+
+    clearCacheBtn.addEventListener('click', ()=>{
+      const username = usernameInput.value.trim();
+      if (!username) { showAlert("Enter a username first."); return; }
+      localStorage.removeItem(ns(username));
+      renderScaffold(username);
+      showAlert("Cache cleared");
+    });
+
+    // ---------- Initial render (no API calls yet) ----------
+    renderScaffold(usernameInput.value.trim());
+
+    // Re-render on username change (still no API calls)
+    usernameInput.addEventListener('change', ()=>{
+      renderScaffold(usernameInput.value.trim());
+    });
+  </script>
+</body>
+</html>
+
