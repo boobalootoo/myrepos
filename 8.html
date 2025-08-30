@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GitHub Repo Explorer</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .category { margin-top: 10px; cursor: pointer; font-weight: bold; }
+    .repo, .file { margin-left: 20px; cursor: pointer; }
+    .file { margin-left: 40px; }
+    .controls { margin-bottom: 20px; }
+    .hidden { display: none; }
+    .slider-container { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>GitHub Repo Explorer</h1>
+  
+  <div class="controls">
+    <button id="updateBtn">Update Repos</button>
+    <br><br>
+    <input type="text" id="searchRepos" placeholder="Search repos...">
+    <input type="text" id="searchFiles" placeholder="Search files...">
+    <br><br>
+    <label for="sortMode">Sort by:</label>
+    <select id="sortMode">
+      <option value="category">Category</option>
+      <option value="repoDate">Repo Last Edited</option>
+      <option value="fileDate">File Last Edited</option>
+    </select>
+    <div class="slider-container">
+      <label for="recentSlider">Show most recent: <span id="sliderValue">10</span></label>
+      <input type="range" id="recentSlider" min="1" value="10">
+    </div>
+  </div>
+
+  <div id="content"></div>
+
+  <script>
+    const username = "boobalootoo";
+    let repos = [];
+    let repoDataCache = {}; // persistent cache
+    const contentDiv = document.getElementById("content");
+    const searchRepos = document.getElementById("searchRepos");
+    const searchFiles = document.getElementById("searchFiles");
+    const sortMode = document.getElementById("sortMode");
+    const recentSlider = document.getElementById("recentSlider");
+    const sliderValue = document.getElementById("sliderValue");
+
+    // Load from localStorage
+    function loadCache() {
+      const cache = localStorage.getItem("repoDataCache");
+      if (cache) repoDataCache = JSON.parse(cache);
+    }
+
+    function saveCache() {
+      localStorage.setItem("repoDataCache", JSON.stringify(repoDataCache));
+    }
+
+    async function fetchRepos() {
+      const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100`);
+      repos = await res.json();
+      repos.sort((a, b) => new Date(b.pushed_at) - new Date(a.pushed_at));
+      // update slider max
+      recentSlider.max = repos.length;
+      render();
+      saveCache();
+    }
+
+    async function fetchRepoFiles(repoName) {
+      if (repoDataCache[repoName]?.files) return repoDataCache[repoName].files;
+      const res = await fetch(`https://api.github.com/repos/${username}/${repoName}/git/trees/main?recursive=1`);
+      const data = await res.json();
+      const files = data.tree
+        .filter(item => item.type === "blob")
+        .map(item => ({
+          path: item.path,
+          url: `https://github.com/${username}/${repoName}/blob/main/${item.path}`,
+          lastEdited: new Date().toISOString() // placeholder
+        }));
+      repoDataCache[repoName] = { files };
+      saveCache();
+      return files;
+    }
+
+    function render() {
+      contentDiv.innerHTML = "";
+
+      const mode = sortMode.value;
+      if (mode === "category") {
+        renderByCategory();
+      } else if (mode === "repoDate") {
+        renderRecentRepos();
+      } else if (mode === "fileDate") {
+        renderRecentFiles();
+      }
+    }
+
+    function renderByCategory() {
+      repos.forEach(repo => {
+        const repoDiv = document.createElement("div");
+        repoDiv.className = "category";
+        repoDiv.textContent = repo.name + " (last pushed: " + new Date(repo.pushed_at).toLocaleString() + ")";
+        repoDiv.onclick = () => toggleRepo(repo.name, repoDiv);
+        contentDiv.appendChild(repoDiv);
+      });
+    }
+
+    async function toggleRepo(repoName, repoDiv) {
+      if (repoDiv.nextSibling && repoDiv.nextSibling.classList.contains("repo")) {
+        repoDiv.nextSibling.remove();
+        return;
+      }
+      const wrapper = document.createElement("div");
+      wrapper.className = "repo";
+      const loadBtn = document.createElement("button");
+      loadBtn.textContent = "Load Files";
+      loadBtn.onclick = async () => {
+        loadBtn.disabled = true;
+        const files = await fetchRepoFiles(repoName);
+        files.forEach(file => {
+          const fileDiv = document.createElement("div");
+          fileDiv.className = "file";
+          fileDiv.textContent = file.path + " (last edited: " + file.lastEdited + ")";
+          wrapper.appendChild(fileDiv);
+        });
+      };
+      wrapper.appendChild(loadBtn);
+      repoDiv.after(wrapper);
+    }
+
+    function renderRecentRepos() {
+      let recent = repos.slice(0, recentSlider.value);
+      recent.forEach(repo => {
+        const repoDiv = document.createElement("div");
+        repoDiv.className = "category";
+        repoDiv.textContent = repo.name + " (last pushed: " + new Date(repo.pushed_at).toLocaleString() + ")";
+        contentDiv.appendChild(repoDiv);
+      });
+    }
+
+    function renderRecentFiles() {
+      let allFiles = [];
+      Object.keys(repoDataCache).forEach(repoName => {
+        if (repoDataCache[repoName].files) {
+          repoDataCache[repoName].files.forEach(file => {
+            allFiles.push({ repoName, ...file });
+          });
+        }
+      });
+      allFiles.sort((a, b) => new Date(b.lastEdited) - new Date(a.lastEdited));
+      let recent = allFiles.slice(0, recentSlider.value);
+      recent.forEach(file => {
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "file";
+        fileDiv.textContent = file.repoName + "/" + file.path + " (last edited: " + file.lastEdited + ")";
+        contentDiv.appendChild(fileDiv);
+      });
+    }
+
+    // Event Listeners
+    document.getElementById("updateBtn").onclick = fetchRepos;
+    searchRepos.oninput = () => {
+      const term = searchRepos.value.toLowerCase();
+      contentDiv.querySelectorAll(".category").forEach(div => {
+        div.style.display = div.textContent.toLowerCase().includes(term) ? "" : "none";
+      });
+    };
+    searchFiles.oninput = () => {
+      const term = searchFiles.value.toLowerCase();
+      contentDiv.querySelectorAll(".file").forEach(div => {
+        div.style.display = div.textContent.toLowerCase().includes(term) ? "" : "none";
+      });
+    };
+    sortMode.onchange = () => {
+      if (sortMode.value === "repoDate") {
+        recentSlider.max = repos.length;
+      } else if (sortMode.value === "fileDate") {
+        let count = Object.values(repoDataCache).reduce((sum, r) => sum + (r.files?.length || 0), 0);
+        recentSlider.max = Math.max(count, 1);
+      }
+      render();
+    };
+    recentSlider.oninput = () => {
+      sliderValue.textContent = recentSlider.value;
+    };
+    recentSlider.onchange = () => {
+      render();
+    };
+
+    // Init
+    loadCache();
+    fetchRepos();
+  </script>
+</body>
+</html>
